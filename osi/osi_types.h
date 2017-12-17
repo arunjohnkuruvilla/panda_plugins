@@ -15,6 +15,21 @@ typedef struct osi_proc_struct {
     target_ulong ppid;
 } OsiProc;
 
+typedef struct osi_thread_struct {
+    target_ulong offset;
+    // uint32_t proc_offset;
+    char *process_name;
+    // char *name;
+    uint32_t thread_id;
+    uint32_t process_id;
+    // uint32_t stack_base;
+    // uint32_t stack_limit;
+    // target_ulong asid;
+    // OsiPage *pages;
+    // target_ulong pid;
+    // target_ulong ppid;
+} OsiThread;
+
 typedef struct osi_procs_struct {
     uint32_t num;
     OsiProc *proc;
@@ -46,6 +61,12 @@ static inline void free_osiproc_g(OsiProc *p) {
 	g_free(p->name);
 	g_free(p);
 	return;
+}
+
+static inline void free_osithrd_g(OsiThread *t) {
+    if (t == NULL) return;
+    g_free(t);
+    return;
 }
 
 /*! @brief Frees an OsiProcs struct. */

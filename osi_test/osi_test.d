@@ -1,5 +1,5 @@
 /home/test/Projects/panda/qemu/arm-softmmu/panda_plugins/osi_test.o: \
- osi_test.c /home/test/Projects/panda/qemu/config.h \
+ osi_test.cpp /home/test/Projects/panda/qemu/config.h \
  /home/test/Projects/panda/qemu/config-host.h \
  /home/test/Projects/panda/qemu//arm-softmmu/config-target.h \
  /home/test/Projects/panda/qemu/qemu-common.h \
@@ -88,8 +88,9 @@
  /home/test/Projects/panda/qemu/softmmu_defs.h \
  /home/test/Projects/panda/qemu/softmmu_header.h \
  /home/test/Projects/panda/qemu/module.h \
+ /home/test/Projects/panda/qemu/panda/panda_common.h \
  /home/test/Projects/panda/qemu/panda_plugin.h ../osi/osi_types.h \
- ../osi/osi_ext.h
+ ../osi/osi_ext.h ../common/prog_point.h
 
 /home/test/Projects/panda/qemu/config.h:
 
@@ -297,8 +298,12 @@
 
 /home/test/Projects/panda/qemu/module.h:
 
+/home/test/Projects/panda/qemu/panda/panda_common.h:
+
 /home/test/Projects/panda/qemu/panda_plugin.h:
 
 ../osi/osi_types.h:
 
 ../osi/osi_ext.h:
+
+../common/prog_point.h:

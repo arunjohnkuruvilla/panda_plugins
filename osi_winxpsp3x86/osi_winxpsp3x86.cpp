@@ -284,6 +284,13 @@ void on_get_current_process(CPUState *env, OsiProc **out_p) {
     *out_p = p;
 }
 
+void on_get_current_thread(CPUState *env, OsiThread **out_t) {
+    OsiThread *t = (OsiThread *) malloc(sizeof(OsiThread));
+
+    
+    *out_t = t;
+}
+
 void on_get_processes(CPUState *env, OsiProcs **out_ps) {
     PTR first = get_current_proc(env);
     PTR first_pid = get_pid(env, first);

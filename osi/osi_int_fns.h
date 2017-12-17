@@ -7,6 +7,10 @@ OsiProcs *get_processes(CPUState *env);
 // gets the currently running process
 OsiProc *get_current_process(CPUState *env);
 
+
+// gets the currently running process
+OsiThread *get_current_thread(CPUState *env);
+
 // returns operating system introspection info for each kernel module currently loaded
 OsiModules *get_modules(CPUState *env);
 
@@ -16,6 +20,7 @@ OsiModules *get_libraries(CPUState *env, OsiProc *p);
 
 // Free memory allocated by other library functions
 void free_osiproc(OsiProc *p);
+void free_osithrd(OsiThread *t);
 void free_osiprocs(OsiProcs *ps);
 void free_osimodules(OsiModules *ms);
 

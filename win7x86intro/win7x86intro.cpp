@@ -24,6 +24,7 @@ extern "C" {
 #include "qemu-common.h"
 #include "cpu.h"
 
+
 #include "panda_plugin.h"
 #include "panda_plugin_plugin.h"
 #include "../osi/osi_types.h"
@@ -35,6 +36,7 @@ void on_get_current_process(CPUState *env, OsiProc **out_p);
 void on_get_processes(CPUState *env, OsiProcs **out_ps);
 void on_get_libraries(CPUState *env, OsiProc *p, OsiModules **out_ms);
 void on_free_osiproc(OsiProc *p);
+void on_free_osithrd(OsiThread *t);
 void on_free_osiprocs(OsiProcs *ps);
 void on_free_osimodules(OsiModules *ms);
 }
@@ -46,31 +48,37 @@ void on_free_osimodules(OsiModules *ms);
 
 // Code should work for other versions of Windows once these constants
 // are redefined. Possibly we should move them to a config file?
-#define KMODE_FS           0x030 // Segment number of FS in kernel mode
-#define KPCR_CURTHREAD_OFF 0x124 // _KPCR.PrcbData.CurrentThread
-#define KPCR_KDVERSION_OFF 0x34  // _KPCR.KdVersionBlock
-#define KDVERSION_DDL_OFF  0x20  // _DBGKD_GET_VERSION64.DebuggerDataList
-#define KDBG_PSLML         0x48  // _KDDEBUGGER_DATA64.PsLoadedModuleList
-#define KTHREAD_KPROC_OFF  0x150 // _KTHREAD.Process
-#define EPROC_LINKS_OFF    0x0b8 // _EPROCESS.ActiveProcessLinks
-#define EPROC_DTB_OFF      0x018 // _EPROCESS.Pcb.DirectoryTableBase
-#define EPROC_PID_OFF      0x0b4 // _EPROCESS.UniqueProcessId
-#define EPROC_PPID_OFF     0x140 // _EPROCESS.InheritedFromUniqueProcessId
-#define EPROC_NAME_OFF     0x16c // _EPROCESS.ImageFileName
-#define EPROC_TYPE_OFF     0x000 // _EPROCESS.Pcb.Header.Type
-#define EPROC_SIZE_OFF     0x002 // _EPROCESS.Pcb.Header.Size
-#define EPROC_TYPE          0x03 // Value of Type
-#define EPROC_SIZE          0x26 // Value of Size
-#define EPROC_PEB_OFF      0x1a8 // _EPROCESS.Peb
-#define PEB_LDR_OFF        0x00c // _PEB.Ldr
-#define PEB_LDR_MEM_LINKS_OFF  0x14 // _PEB_LDR_DATA.InMemoryOrderModuleLinks
-#define PEB_LDR_LOAD_LINKS_OFF 0x0c // _PEB_LDR_DATA.InMemoryOrderModuleLinks
-#define LDR_MEM_LINKS_OFF  0x008 // _LDR_DATA_TABLE_ENTRY.InMemoryOrderLinks
-#define LDR_LOAD_LINKS_OFF 0x000 // _LDR_DATA_TABLE_ENTRY.InLoadOrderLinks
-#define LDR_BASE_OFF       0x018 // _LDR_DATA_TABLE_ENTRY.DllBase
-#define LDR_SIZE_OFF       0x020 // _LDR_DATA_TABLE_ENTRY.SizeOfImage
-#define LDR_BASENAME_OFF   0x02c // _LDR_DATA_TABLE_ENTRY.BaseDllName
-#define LDR_FILENAME_OFF   0x024 // _LDR_DATA_TABLE_ENTRY.FullDllName
+#define KMODE_FS                    0x030   // Segment number of FS in kernel mode
+#define KPCR_CURTHREAD_OFF          0x124   // _KPCR.PrcbData.CurrentThread
+#define KPCR_KDVERSION_OFF          0x34    // _KPCR.KdVersionBlock
+#define KDVERSION_DDL_OFF           0x20    // _DBGKD_GET_VERSION64.DebuggerDataList
+#define KDBG_PSLML                  0x48    // _KDDEBUGGER_DATA64.PsLoadedModuleList
+#define KTHREAD_KPROC_OFF           0x150   // _KTHREAD.Process
+#define EPROC_LINKS_OFF             0x0b8   // _EPROCESS.ActiveProcessLinks
+#define EPROC_DTB_OFF               0x018   // _EPROCESS.Pcb.DirectoryTableBase
+#define EPROC_PID_OFF               0x0b4   // _EPROCESS.UniqueProcessId
+#define EPROC_PPID_OFF              0x140   // _EPROCESS.InheritedFromUniqueProcessId
+#define EPROC_NAME_OFF              0x16c   // _EPROCESS.ImageFileName
+#define EPROC_TYPE_OFF              0x000   // _EPROCESS.Pcb.Header.Type
+#define EPROC_SIZE_OFF              0x002   // _EPROCESS.Pcb.Header.Size
+#define EPROC_TYPE                  0x03    // Value of Type
+#define EPROC_SIZE                  0x26    // Value of Size
+#define EPROC_PEB_OFF               0x1a8   // _EPROCESS.Peb
+#define PEB_LDR_OFF                 0x00c   // _PEB.Ldr
+#define PEB_LDR_MEM_LINKS_OFF       0x14    // _PEB_LDR_DATA.InMemoryOrderModuleLinks
+#define PEB_LDR_LOAD_LINKS_OFF      0x0c    // _PEB_LDR_DATA.InMemoryOrderModuleLinks
+#define LDR_MEM_LINKS_OFF           0x008   // _LDR_DATA_TABLE_ENTRY.InMemoryOrderLinks
+#define LDR_LOAD_LINKS_OFF          0x000   // _LDR_DATA_TABLE_ENTRY.InLoadOrderLinks
+#define LDR_BASE_OFF                0x018   // _LDR_DATA_TABLE_ENTRY.DllBase
+#define LDR_SIZE_OFF                0x020   // _LDR_DATA_TABLE_ENTRY.SizeOfImage
+#define LDR_BASENAME_OFF            0x02c   // _LDR_DATA_TABLE_ENTRY.BaseDllName
+#define LDR_FILENAME_OFF            0x024   // _LDR_DATA_TABLE_ENTRY.FullDllName
+
+// Thread offsets
+#define KTHRD_STACKLIMIT_OFF        0x2c    // _KTHREAD.StackLimit
+#define KTHRD_STACKBASE_OFF         0x190   // _KTHREAD.StackBase
+#define ETHRD_CID_UNIQUE_PROC_OFF   0x22c   // _ETHREAD.ClientID.UniqueProcess
+#define ETHRD_CID_UNIQUE_THRD_OFF   0x230   // _ETHREAD.ClientID.UniqueThread
 
 // Size of a guest pointer. Note that this can't just be target_ulong since
 // a 32-bit OS will run on x86_64-softmmu
@@ -130,6 +138,19 @@ static PTR get_pid(CPUState *env, PTR eproc) {
     return pid;
 }
 
+
+static PTR get_thread_pid(CPUState *env, PTR ethrd) {
+    PTR thread_pid;
+    panda_virtual_memory_rw(env, ethrd+ETHRD_CID_UNIQUE_PROC_OFF, (uint8_t *)&thread_pid, sizeof(PTR), false);
+    return thread_pid;
+}
+
+static PTR get_thread_id(CPUState *env, PTR ethrd) {
+    PTR thread_id;
+    panda_virtual_memory_rw(env, ethrd+ETHRD_CID_UNIQUE_THRD_OFF, (uint8_t *)&thread_id, sizeof(PTR), false);
+    return thread_id;
+}
+
 static PTR get_ppid(CPUState *env, PTR eproc) {
     PTR ppid;
     panda_virtual_memory_rw(env, eproc+EPROC_PPID_OFF, (uint8_t *)&ppid, sizeof(PTR), false);
@@ -142,9 +163,22 @@ static PTR get_dtb(CPUState *env, PTR eproc) {
     return dtb;
 }
 
+// static PTR get_thread_id(CPUState *env, PTR ethrd) {
+//     PTR thread_id;
+//     panda_virtual_memory_rw(env, ethrd + ETHRD_CID_OFF + 0x4, (uint8_t *)&thread_id, sizeof(PTR), false);
+//     return thread_id;
+// }
 // *must* be called on a buffer of size 17 or greater
 static void get_procname(CPUState *env, PTR eproc, char *name) {
     panda_virtual_memory_rw(env, eproc+EPROC_NAME_OFF, (uint8_t *)name, 16, false);
+    name[16] = '\0';
+}
+
+static void get_thread_procname(CPUState *env, PTR ethrd, char *name) {
+    PTR proc;
+    panda_virtual_memory_rw(env, ethrd + KTHREAD_KPROC_OFF, (uint8_t *)&proc, sizeof(PTR), false);
+
+    panda_virtual_memory_rw(env, proc + EPROC_NAME_OFF, (uint8_t *)name, 16, false);
     name[16] = '\0';
 }
 
@@ -192,15 +226,13 @@ static PTR get_current_proc(CPUState *env) {
     return proc;
 }
 
-static PTR get_current_thread(CPUState *env) {
-    PTR thread, proc;
+static PTR get_current_thrd(CPUState *env) {
+    PTR curr_thread;
     PTR kpcr = get_kpcr(env);
     
-    // Read KPCR->CurrentThread->Process
-    panda_virtual_memory_rw(env, kpcr+KPCR_CURTHREAD_OFF, (uint8_t *)&thread, sizeof(PTR), false);
-    panda_virtual_memory_rw(env, thread+KTHREAD_KPROC_OFF, (uint8_t *)&proc, sizeof(PTR), false);
+    panda_virtual_memory_rw(env, kpcr+KPCR_CURTHREAD_OFF, (uint8_t *)&curr_thread, sizeof(PTR), false);
 
-    return thread;
+    return curr_thread;
 }
 
 static bool is_valid_process(CPUState *env, PTR eproc) {
@@ -245,12 +277,24 @@ static PTR get_next_mod(CPUState *env, PTR mod) {
 static void fill_osiproc(CPUState *env, OsiProc *p, PTR eproc) {
     p->offset = eproc;
     char *name = (char *)malloc(17);
+    // printf("Process: %x\n", eproc);
     get_procname(env, eproc, name);
     p->name = name;
     p->asid = get_dtb(env, eproc);
     p->pages = NULL;
     p->pid = get_pid(env, eproc);
     p->ppid = get_ppid(env, eproc);
+}
+
+// Fill in OsiThread data structure
+static void fill_osithrd(CPUState *env, OsiThread *t, PTR ethrd) {
+    t->offset = ethrd;
+    char *name = (char *)malloc(17);
+    // printf("Process: %x\n", eproc);
+    get_thread_procname(env, ethrd, name);
+    t->process_name = name;
+    t->thread_id = get_thread_id(env, ethrd);
+    t->process_id = get_thread_pid(env, ethrd);
 }
 
 static void fill_osimod(CPUState *env, OsiModule *m, PTR mod) {
@@ -295,6 +339,14 @@ void on_get_current_process(CPUState *env, OsiProc **out_p) {
     fill_osiproc(env, p, eproc);
     *out_p = p;
 }
+
+void on_get_current_thread(CPUState *env, OsiThread **out_t) {
+    OsiThread *t = (OsiThread *) malloc(sizeof(OsiThread));
+    PTR ethrd = get_current_thrd(env);
+    fill_osithrd(env, t, ethrd);
+    *out_t = t;
+}
+
 
 void on_get_processes(CPUState *env, OsiProcs **out_ps) {
     PTR first = get_current_proc(env);
@@ -399,6 +451,12 @@ void on_free_osiproc(OsiProc *p) {
     free(p);
 }
 
+void on_free_osithrd(OsiThread *t) {
+    if (!t) return;
+    free(t->process_name);
+    free(t);
+}
+
 void on_free_osiprocs(OsiProcs *ps) {
     if (!ps) return;
     for(uint32_t i = 0; i < ps->num; i++) {
@@ -424,10 +482,12 @@ bool init_plugin(void *self) {
     // panda_require("osi");
 #ifdef TARGET_I386
     PPP_REG_CB("osi", on_get_current_process, on_get_current_process);
+    PPP_REG_CB("osi", on_get_current_thread, on_get_current_thread);
     PPP_REG_CB("osi", on_get_processes, on_get_processes);
     PPP_REG_CB("osi", on_get_libraries, on_get_libraries);
     PPP_REG_CB("osi", on_get_modules, on_get_modules);
     PPP_REG_CB("osi", on_free_osiproc, on_free_osiproc);
+    PPP_REG_CB("osi", on_free_osithrd, on_free_osithrd);
     PPP_REG_CB("osi", on_free_osiprocs, on_free_osiprocs);
     PPP_REG_CB("osi", on_free_osimodules, on_free_osimodules);
     return true;

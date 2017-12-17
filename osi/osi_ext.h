@@ -23,6 +23,13 @@ static inline OsiProc * get_current_process(CPUState *env){
     assert(__get_current_process);
     return __get_current_process(env);
 }
+typedef OsiThread *(*get_current_thread_t)(CPUState *env);
+static get_current_thread_t __get_current_thread = NULL;
+static inline OsiThread * get_current_thread(CPUState *env);
+static inline OsiThread * get_current_thread(CPUState *env){
+    assert(__get_current_thread);
+    return __get_current_thread(env);
+}
 typedef OsiModules *(*get_modules_t)(CPUState *env);
 static get_modules_t __get_modules = NULL;
 static inline OsiModules * get_modules(CPUState *env);
@@ -43,6 +50,13 @@ static inline void free_osiproc(OsiProc *p);
 static inline void free_osiproc(OsiProc *p){
     assert(__free_osiproc);
     return __free_osiproc(p);
+}
+typedef void(*free_osithrd_t)(OsiThread *t);
+static free_osithrd_t __free_osithrd = NULL;
+static inline void free_osithrd(OsiThread *t);
+static inline void free_osithrd(OsiThread *t){
+    assert(__free_osithrd);
+    return __free_osithrd(t);
 }
 typedef void(*free_osiprocs_t)(OsiProcs *ps);
 static free_osiprocs_t __free_osiprocs = NULL;
@@ -77,9 +91,11 @@ static inline bool init_osi_api(void);static inline bool init_osi_api(void){
     dlerror();
 IMPORT_PPP(module, get_processes)
 IMPORT_PPP(module, get_current_process)
+IMPORT_PPP(module, get_current_thread)
 IMPORT_PPP(module, get_modules)
 IMPORT_PPP(module, get_libraries)
 IMPORT_PPP(module, free_osiproc)
+IMPORT_PPP(module, free_osithrd)
 IMPORT_PPP(module, free_osiprocs)
 IMPORT_PPP(module, free_osimodules)
 return true;
