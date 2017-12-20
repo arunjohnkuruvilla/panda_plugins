@@ -1,10 +1,7 @@
 /home/test/Projects/panda/qemu/arm-softmmu/panda_plugins/cfi.o: cfi.cpp \
- /home/test/Projects/panda/qemu/panda_plugin.h \
  /home/test/Projects/panda/qemu/config.h \
  /home/test/Projects/panda/qemu/config-host.h \
  /home/test/Projects/panda/qemu//arm-softmmu/config-target.h \
- /home/test/Projects/panda/qemu/target-arm/cpu.h \
- /home/test/Projects/panda/qemu/config.h \
  /home/test/Projects/panda/qemu/qemu-common.h \
  /home/test/Projects/panda/qemu/compiler.h /usr/include/glib-2.0/glib.h \
  /usr/include/glib-2.0/glib/galloca.h /usr/include/glib-2.0/glib/gtypes.h \
@@ -71,8 +68,9 @@
  /usr/include/glib-2.0/glib/deprecated/gthread.h \
  /usr/include/glib-2.0/glib/glib-autocleanups.h \
  /home/test/Projects/panda/qemu/qemu-os-posix.h \
- /home/test/Projects/panda/qemu/module.h \
+ /home/test/Projects/panda/qemu/target-arm/cpu.h \
  /home/test/Projects/panda/qemu/cpu-defs.h \
+ /home/test/Projects/panda/qemu/config.h \
  /home/test/Projects/panda/qemu/osdep.h \
  /home/test/Projects/panda/qemu/qemu-queue.h \
  /home/test/Projects/panda/qemu/qemu-barrier.h \
@@ -89,27 +87,16 @@
  /home/test/Projects/panda/qemu/qemu-lock.h \
  /home/test/Projects/panda/qemu/softmmu_defs.h \
  /home/test/Projects/panda/qemu/softmmu_header.h \
+ /home/test/Projects/panda/qemu/module.h \
  /home/test/Projects/panda/qemu/panda/panda_common.h \
- /home/test/Projects/panda/qemu/panda/pandalog.h \
- /home/test/Projects/panda/qemu/panda/pandalog.pb-c.h \
- /home/test/Projects/panda/qemu/rr_log.h \
- /home/test/Projects/panda/qemu/rr_log_all.h \
- /home/test/Projects/panda/qemu/rr_log_all.h \
- /home/test/Projects/panda/qemu/panda_plugins/osi/osi_types.h \
- /home/test/Projects/panda/qemu/panda_plugins/osi/osi_ext.h cfi.h \
- /home/test/Projects/panda/qemu/panda_plugin_plugin.h
-
-/home/test/Projects/panda/qemu/panda_plugin.h:
+ /home/test/Projects/panda/qemu/panda_plugin.h ../osi/osi_types.h \
+ ../osi/osi_ext.h ../common/prog_point.h
 
 /home/test/Projects/panda/qemu/config.h:
 
 /home/test/Projects/panda/qemu/config-host.h:
 
 /home/test/Projects/panda/qemu//arm-softmmu/config-target.h:
-
-/home/test/Projects/panda/qemu/target-arm/cpu.h:
-
-/home/test/Projects/panda/qemu/config.h:
 
 /home/test/Projects/panda/qemu/qemu-common.h:
 
@@ -271,9 +258,11 @@
 
 /home/test/Projects/panda/qemu/qemu-os-posix.h:
 
-/home/test/Projects/panda/qemu/module.h:
+/home/test/Projects/panda/qemu/target-arm/cpu.h:
 
 /home/test/Projects/panda/qemu/cpu-defs.h:
+
+/home/test/Projects/panda/qemu/config.h:
 
 /home/test/Projects/panda/qemu/osdep.h:
 
@@ -307,22 +296,14 @@
 
 /home/test/Projects/panda/qemu/softmmu_header.h:
 
+/home/test/Projects/panda/qemu/module.h:
+
 /home/test/Projects/panda/qemu/panda/panda_common.h:
 
-/home/test/Projects/panda/qemu/panda/pandalog.h:
+/home/test/Projects/panda/qemu/panda_plugin.h:
 
-/home/test/Projects/panda/qemu/panda/pandalog.pb-c.h:
+../osi/osi_types.h:
 
-/home/test/Projects/panda/qemu/rr_log.h:
+../osi/osi_ext.h:
 
-/home/test/Projects/panda/qemu/rr_log_all.h:
-
-/home/test/Projects/panda/qemu/rr_log_all.h:
-
-/home/test/Projects/panda/qemu/panda_plugins/osi/osi_types.h:
-
-/home/test/Projects/panda/qemu/panda_plugins/osi/osi_ext.h:
-
-cfi.h:
-
-/home/test/Projects/panda/qemu/panda_plugin_plugin.h:
+../common/prog_point.h:

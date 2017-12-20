@@ -295,6 +295,14 @@ static void fill_osithrd(CPUState *env, OsiThread *t, PTR ethrd) {
     t->process_name = name;
     t->thread_id = get_thread_id(env, ethrd);
     t->process_id = get_thread_pid(env, ethrd);
+
+    target_ulong stack_base;
+    target_ulong stack_limit;
+    panda_virtual_memory_rw(env, ethrd + KTHRD_STACKBASE_OFF, (uint8_t *)&stack_base, sizeof(target_ulong), false);
+    panda_virtual_memory_rw(env, ethrd + KTHRD_STACKLIMIT_OFF, (uint8_t *)&stack_limit, sizeof(target_ulong), false);
+
+    t->stack_base = stack_base;
+    t->stack_limit = stack_limit;
 }
 
 static void fill_osimod(CPUState *env, OsiModule *m, PTR mod) {

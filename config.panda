@@ -25,7 +25,7 @@ taint_compute_numbers
 bir
 replaymovie
 useafterfree
-bufmon
+#bufmon
 memsavep
 #tralign
 #fdtracker
@@ -57,3 +57,4 @@ loaded
 wintrospection
 pri_trace
 add
+#cfi

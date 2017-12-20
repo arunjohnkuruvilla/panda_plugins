@@ -11,7 +11,7 @@ QEMU_CFLAGS+=-std=c++11
 
 # If you need custom CFLAGS or LIBS, set them up here
 CFLAGS+=-lm
-# LIBS+=
+LIBS+=-ldistorm3
 
 # The main rule for your plugin. Please stick with the panda_ naming
 # convention.

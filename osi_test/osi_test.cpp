@@ -16,9 +16,7 @@ PANDAENDCOMMENT */
 #define __STDC_FORMAT_MACROS
 
 #include <distorm.h>
-namespace distorm {
 #include <mnemonics.h>
-}
 // Choose a granularity for the OSI code to be invoked.
 #define INVOKE_FREQ_PGD
 //#define INVOKE_FREQ_BBL
@@ -39,22 +37,27 @@ extern "C" {
 }
 
 #include "../common/prog_point.h"
+#include <iostream>
+#include <fstream>
 #include <map>
 #include <set>
 #include <vector>
 #include <stack>
 #include <algorithm>
 
+#define PROCESS_ID 0x754
 enum instr_type {
-  INSTR_UNKNOWN = 0,
-  INSTR_CALL,
-  INSTR_RET,
-  INSTR_SYSCALL,
-  INSTR_SYSRET,
-  INSTR_SYSENTER,
-  INSTR_SYSEXIT,
-  INSTR_INT,
-  INSTR_IRET,
+    INSTR_UNKNOWN = 0,
+    INSTR_CALL,
+    INSTR_RET,
+    INSTR_SYSCALL,
+    INSTR_SYSRET,
+    INSTR_SYSENTER,
+    INSTR_SYSEXIT,
+    INSTR_INT,
+    INSTR_IRET,
+    INSTR_UNC_JUMP,
+    INSTR_CND_JUMP
 };
 
 struct stack_entry {
@@ -62,7 +65,17 @@ struct stack_entry {
     instr_type kind;
 };
 
+// Entry for call_jump_cache
+typedef struct jump_instr_entry {
+    uint32_t target_address;
+    instr_type type;
+} transfer_instr;
+
 int last_ret_size = 0;
+
+const char *whitelist_src = 0;
+
+std::map<uint32_t, std::vector<uint32_t>> whitelist;
 
 // std::map<uint32_t, char*> thread_list;
 
@@ -82,18 +95,22 @@ uint8_t ret_status = 0;
 // // stackid -> shadow stack
 // std::map<stackid, std::vector<stack_entry>> callstacks;
 
-// stackid -> function entry points
-std::map<std::pair<uint32_t, uint32_t>, std::stack<stack_entry>> user_stacks;
+// <process_id, thread_id> -> stack
+std::map<std::pair<uint32_t, uint32_t>, std::vector<stack_entry>> user_stacks;
 
-// stackid -> function entry points
-std::map<std::pair<uint32_t, uint32_t>, std::stack<stack_entry>> kernel_stacks;
+// <process_id, thread_id> -> stack
+std::map<std::pair<uint32_t, uint32_t>, std::vector<stack_entry>> kernel_stacks;
 
-// // EIP -> instr_type
-std::map<uint32_t, instr_type> call_cache;
+// EIP -> instr_type
+// std::map<uint32_t, instr_type> call_cache;
 
+// EIP -> jump_instr_type
+std::map<uint32_t, transfer_instr> call_cache;
 
+// <process_id, thread_id> -> status
 std::map<std::pair<uint32_t, uint32_t>, uint8_t> user_ret_status;
 
+// <process_id, thread_id> -> status
 std::map<std::pair<uint32_t, uint32_t>, uint8_t> kernel_ret_status;
 
 int vmi_pgd_changed(CPUState *env, target_ulong old_pgd, target_ulong new_pgd);
@@ -101,11 +118,15 @@ int after_block_translate(CPUState *env, TranslationBlock *tb);
 int before_block_exec(CPUState *env, TranslationBlock *tb);
 int after_block_exec(CPUState *env, TranslationBlock *tb, TranslationBlock *next_tb);
 
-instr_type disas_block(CPUState* env, uint32_t pc, int size) {
+transfer_instr disas_block(CPUState* env, uint32_t pc, int size) {
     unsigned char *buf = (unsigned char *) malloc(size);
     int err = panda_virtual_memory_rw(env, pc, buf, size, 0);
     if (err == -1) printf("Couldn't read TB memory!\n");
+
+    uint32_t target_address = 0x0;
     instr_type res = INSTR_UNKNOWN;
+
+    transfer_instr return_instr;
 
 #if defined(TARGET_I386)
     _DInst dec[256];
@@ -121,17 +142,17 @@ instr_type disas_block(CPUState* env, uint32_t pc, int size) {
 
     distorm_decompose(&ci, dec, 256, &dec_count);
     for (int i = dec_count - 1; i >= 0; i--) {
+
         if (dec[i].flags == FLAG_NOT_DECODABLE) {
             continue;
         }
-
         if (META_GET_FC(dec[i].meta) == FC_CALL) {
             res = INSTR_CALL;
             goto done;
         }
         else if (META_GET_FC(dec[i].meta) == FC_RET) {
             // Ignore IRETs
-            if (dec[i].opcode == distorm::I_IRET) {
+            if (dec[i].opcode == I_IRET) {
                 res = INSTR_UNKNOWN;
             }
             else {
@@ -148,6 +169,34 @@ instr_type disas_block(CPUState* env, uint32_t pc, int size) {
             res = INSTR_UNKNOWN;
             goto done;
         }
+        // Cheching for unconditional jumps
+        else if (META_GET_FC(dec[i].meta) == FC_UNC_BRANCH) {
+            if (dec[i].ops[0].type == O_PC) {
+                res = INSTR_UNC_JUMP;
+                target_address = INSTRUCTION_GET_TARGET(&dec[i]);
+                // printf("Target Address in Unconditional Jump: %x\n", INSTRUCTION_GET_TARGET(&dec[i]));
+            }
+            else {
+                // printf("Indirect addressing used\n");
+                res = INSTR_UNKNOWN;
+            }
+            goto done;
+        }
+        // Cheching for conditional jumps
+        else if (META_GET_FC(dec[i].meta) == FC_CND_BRANCH) {
+            if (dec[i].ops[0].type == O_PC) {
+                res = INSTR_CND_JUMP;
+                target_address = INSTRUCTION_GET_TARGET(&dec[i]);
+                // printf("Target Address in Conditional Jump: %x\n", INSTRUCTION_GET_TARGET(&dec[i]));
+                // printf("%x\n", INSTRUCTION_GET_TARGET(&dec[i]));
+            }
+            else {
+                // printf("Indirect addressing used\n");
+                res = INSTR_UNKNOWN;
+            }
+            
+            goto done;
+        }
         else {
             res = INSTR_UNKNOWN;
             goto done;
@@ -157,54 +206,11 @@ instr_type disas_block(CPUState* env, uint32_t pc, int size) {
 
 done:
     free(buf);
-    return res;
+    return_instr.target_address = target_address;
+    return_instr.type = res;
+    return return_instr;
 }
 
-int get_current_stack_insert(CPUState *env, stack_entry se) {
-    OsiThread *current_thread = get_current_thread(env);
-
-    std::map<std::pair<uint32_t, uint32_t>, std::stack<stack_entry>>::iterator current_stack_map_entry;
-
-    std::pair<uint32_t, uint32_t> context;
-    context = std::make_pair(current_thread->process_id, current_thread->thread_id);
-    if (panda_in_kernel(env)) {
-        current_stack_map_entry = kernel_stacks.find(context);
-        if (current_stack_map_entry == kernel_stacks.end()) {
-            std::stack<stack_entry> new_stack;
-            new_stack.push(se);
-            kernel_stacks.insert(std::make_pair(context, new_stack));
-            kernel_ret_status.insert(std::make_pair(context, 0));
-            // printf("Thread with signature (%d, %d) inserted to kernel stack list\n", current_thread->process_id, current_thread->thread_id);
-        }
-        else {
-            std::stack<stack_entry> temp;
-            temp = current_stack_map_entry->second;
-            temp.push(se);
-        }
-    }
-    else {
-        current_stack_map_entry = user_stacks.find(context);
-        if (current_stack_map_entry == user_stacks.end()) {
-            std::stack<stack_entry> new_stack;
-            new_stack.push(se);
-            user_stacks.insert(std::make_pair(context, new_stack));
-            user_ret_status.insert(std::make_pair(context, 0));
-            // printf("Thread with signature (%d, %d) inserted to user stack list\n", current_thread->process_id, current_thread->thread_id);
-        }
-        else {
-            std::stack<stack_entry> temp;
-            temp = current_stack_map_entry->second;
-            temp.push(se);
-        }
-    }
-
-    // std::stack<stack_entry> temp;
-    // temp = current_stack_map_entry->second;
-    // temp.push(se);
-    free_osithrd(current_thread);
-    return 0;
-
-}
 
 int get_current_return_status(CPUState *env, uint32_t process_id, uint32_t thread_id) {
 
@@ -241,38 +247,20 @@ int get_current_return_status(CPUState *env, uint32_t process_id, uint32_t threa
 
 }
 
-uint32_t get_current_stack_remove(CPUState *env, uint32_t process_id, uint32_t thread_id) {
-    std::map<std::pair<uint32_t, uint32_t>, std::stack<stack_entry>>::iterator current_stack_map_entry;
-    std::pair<uint32_t, uint32_t> context;
-    context = std::make_pair(process_id, thread_id);
-    if (panda_in_kernel(env)) {
-        current_stack_map_entry = kernel_stacks.find(context);
-        if (current_stack_map_entry == kernel_stacks.end()) {
-            // printf("ERROR: Specified kernel stack empty\n");
-            return 0x2;
-        }
-        else {
-            std::stack<stack_entry> temp;
-            temp = current_stack_map_entry->second;
-            stack_entry prev_ret_stack_entry = temp.top();
-            temp.pop();
-            return prev_ret_stack_entry.pc;
-        }
-    }
-    else {
-        current_stack_map_entry = user_stacks.find(context);
-        if (current_stack_map_entry == user_stacks.end()) {
-            // printf("ERROR: Specified kernel stack empty\n");
-            return 0x2;
-        }
-        else {
-            std::stack<stack_entry> temp;
-            temp = current_stack_map_entry->second;
-            stack_entry prev_ret_stack_entry = temp.top();
-            temp.pop();
-            return prev_ret_stack_entry.pc;
-        }
-    }
+void load_whitelist() {
+    // printf("HERE\n");
+    // std::ifstream file (whitelist);
+    // std::vector<std::vector<std::string>> table = readCSV(file);
+    // printf("%c\n", table[0]);
+    // printf("%c\n", table[2]);
+    // exit(1);
+    std::vector<uint32_t> temp;
+    temp.push_back(0x82a3160c);
+    temp.push_back(0x82a31676);
+    temp.push_back(0x82a315e0);
+    temp.push_back(0x82a3160c);
+
+    whitelist[0x0] = temp;
 }
 
 int set_ret_status(CPUState *env) {
@@ -307,17 +295,27 @@ int set_ret_status(CPUState *env) {
     return 0;
 }
 
-std::stack<stack_entry> *get_current_stack(CPUState *env) {
+// Implementation of Thread Stack Layout Identification algorithm in http://doi.acm.org/10.1145/2484313.2484352
+// std::vector<stack_entry> *get_current_stack_v2(CPUState *env) {
+//     OsiThread *current_thread = get_current_thread();
+
+//     bool new_thread = false;
+
+
+//     free_osithrd(current_thread);
+// }
+
+std::vector<stack_entry> *get_current_stack(CPUState *env) {
     OsiThread *current_thread = get_current_thread(env);
 
-    std::map<std::pair<uint32_t, uint32_t>, std::stack<stack_entry>>::iterator current_stack_map_entry;
+    std::map<std::pair<uint32_t, uint32_t>, std::vector<stack_entry>>::iterator current_stack_map_entry;
 
-    std::pair<std::map<std::pair<uint32_t, uint32_t>, std::stack<stack_entry>>::iterator, bool> new_stack_entry;
+    std::pair<std::map<std::pair<uint32_t, uint32_t>, std::vector<stack_entry>>::iterator, bool> new_stack_entry;
 
     if(panda_in_kernel(env)) {
         current_stack_map_entry = kernel_stacks.find(std::make_pair(current_thread->process_id, current_thread->thread_id));
         if (current_stack_map_entry == kernel_stacks.end()) {
-            std::stack<stack_entry> new_stack;
+            std::vector<stack_entry> new_stack;
             new_stack_entry = kernel_stacks.insert(std::make_pair(std::make_pair(current_thread->process_id, current_thread->thread_id), new_stack));
             kernel_ret_status.insert(std::make_pair(std::make_pair(current_thread->process_id, current_thread->thread_id), 0));
             return &new_stack_entry.first->second;
@@ -326,7 +324,7 @@ std::stack<stack_entry> *get_current_stack(CPUState *env) {
     else {
         current_stack_map_entry = user_stacks.find(std::make_pair(current_thread->process_id, current_thread->thread_id));
         if (current_stack_map_entry == user_stacks.end()) {
-            std::stack<stack_entry> new_stack;
+            std::vector<stack_entry> new_stack;
             new_stack_entry = user_stacks.insert(std::make_pair(std::make_pair(current_thread->process_id, current_thread->thread_id), new_stack));
             user_ret_status.insert(std::make_pair(std::make_pair(current_thread->process_id, current_thread->thread_id), 0));
             return &new_stack_entry.first->second;
@@ -336,34 +334,56 @@ std::stack<stack_entry> *get_current_stack(CPUState *env) {
     return &current_stack_map_entry->second;
 }
 
+void pop_until_address(std::vector<stack_entry> *current_stack, uint32_t addr) {
+    while(current_stack->back().pc != addr) {
+        current_stack->pop_back();
+    }
+    current_stack->pop_back();
+}
+
 int after_block_translate(CPUState *env, TranslationBlock *tb) {
+    OsiThread *current_thread = get_current_thread(env);
     call_cache[tb->pc] = disas_block(env, tb->pc, tb->size);
+    free_osithrd(current_thread);
     return 1;
 }
 
 int before_block_exec(CPUState *env, TranslationBlock *tb) {
     OsiThread *current_thread = get_current_thread(env);
 
+    bool stack_status = false;
     if (get_current_return_status(env, current_thread->process_id, current_thread->thread_id) == 1) {
-        std::stack<stack_entry> *current_thread_stack = get_current_stack(env);
+        std::vector<stack_entry> *current_thread_stack = get_current_stack(env);
 
         if (!current_thread_stack->empty()) {
-            stack_entry top_entry = current_thread_stack->top();
-            
-            
+            stack_entry top_entry = current_thread_stack->back();
 
-            if((top_entry.pc != tb->pc) && (current_thread->process_id == 0x72c)) {
-                printf("Popping Function call in (%d, %d, %s): %x.\n", current_thread->process_id, current_thread->thread_id, current_thread->process_name, tb->pc);
+            if((top_entry.pc != tb->pc) && (current_thread->process_id == PROCESS_ID)) {
+                printf("Popping Function call(%d, %d, %s).\n", current_thread->process_id, current_thread->thread_id, current_thread->process_name);
                 printf("Popped PC: %x\n", top_entry.pc);
                 printf("Current PC: %x\n", tb->pc);
-            }
-            if((top_entry.pc == tb->pc) && (current_thread->process_id == 0x72c)) {
-                printf("Popping Success call in (%d, %d, %s): %x.\n", current_thread->process_id, current_thread->thread_id, current_thread->process_name, tb->pc);
+                printf("Printing Stack\n");
+                for(std::vector<stack_entry>::reverse_iterator it = current_thread_stack->rbegin(); it != current_thread_stack->rend(); ++it) {
+                    if (it->pc == tb->pc) {
+                        stack_status = true;
+                    }
+                }
+                if (stack_status) {
+                    pop_until_address(current_thread_stack, tb->pc);
+                }
+                else {
+                    for(std::vector<stack_entry>::reverse_iterator it = current_thread_stack->rbegin(); it != current_thread_stack->rend(); ++it) {
+                        printf("%x\t", it->pc);
+                    }
+                    printf("\n");
+                }
                 
             }
-            // assert(top_entry.pc == tb->pc);
-
-            current_thread_stack->pop();
+            if((top_entry.pc == tb->pc) && (current_thread->process_id == PROCESS_ID)) {
+                // printf("Popping Success call in (%d, %d, %s): %x.\n", current_thread->process_id, current_thread->thread_id, current_thread->process_name, tb->pc);
+                current_thread_stack->pop_back();
+            }
+            
         }
         // else {
         //     printf("Stack empty\n");
@@ -401,6 +421,19 @@ int before_block_exec(CPUState *env, TranslationBlock *tb) {
     return 0;
 }
 
+int is_present_in_whitelist(uint32_t process_id, uint32_t target_address) {
+    std::map<uint32_t, std::vector<uint32_t>>::iterator iter;
+    iter = whitelist.find(process_id);
+    if (iter == whitelist.end()) {
+        return 0;
+    }
+    for(std::vector<uint32_t>::iterator it = iter->second.begin(); it != iter->second.end(); ++it) {
+        if (*it == target_address) {
+            return 1;
+        }
+    }
+    return 0;
+}
 int after_block_exec(CPUState *env, TranslationBlock *tb, TranslationBlock *next) {
     OsiThread *current_thread = get_current_thread(env);
     OsiProc *current_process = get_current_process(env);
@@ -410,9 +443,9 @@ int after_block_exec(CPUState *env, TranslationBlock *tb, TranslationBlock *next
 
 #ifdef TARGET_X86_64
 
-    instr_type tb_type = call_cache[tb->pc];
+    transfer_instr tb_type = call_cache[tb->pc];
 
-    if (tb_type == INSTR_CALL) {
+    if (tb_type.type == INSTR_CALL) {
 
         // stack_entry se = {tb->pc+tb->size,tb_type};
         // callstacks[get_stackid(env,tb->pc)].push_back(se);
@@ -426,7 +459,7 @@ int after_block_exec(CPUState *env, TranslationBlock *tb, TranslationBlock *next
 
         stack_entry se = {
             tb->pc+tb->size, 
-            tb_type
+            tb_type.type
         };
 
         // std::stack<stack_entry> *current_thread_stack = get_current_stack(env);
@@ -434,13 +467,13 @@ int after_block_exec(CPUState *env, TranslationBlock *tb, TranslationBlock *next
         // // printf("Function call in (%d, %d). Pushing into stack: %x\n", current_thread->process_id, current_thread->thread_id, tb->pc+tb->size);
         // // free_osithrd(current_thread);
         // current_thread_stack->push(se);
-        if (current_thread->process_id == 0x72c) {
-            std::stack<stack_entry> *current_thread_stack = get_current_stack(env);
+        // if (current_thread->process_id == PROCESS_ID) {
+            std::vector<stack_entry> *current_thread_stack = get_current_stack(env);
             // OsiThread *current_thread = get_current_thread(env);
             // printf("Function call in (%d, %d). Pushing into stack: %x\n", current_thread->process_id, current_thread->thread_id, tb->pc+tb->size);
             // free_osithrd(current_thread);
-            current_thread_stack->push(se);
-        }
+            current_thread_stack->push_back(se);
+        // }
         // printf("Stack size for (%d, %d) is %d\n", current_thread->process_id, current_thread->thread_id, current_thread_stack->size());
 
         // OsiThread *current_thread = get_current_thread(env);
@@ -486,13 +519,11 @@ int after_block_exec(CPUState *env, TranslationBlock *tb, TranslationBlock *next
         // printf("Just executed a INSTR_CALL in " TARGET_FMT_lx "\n", tb->pc);
         
     }
-    else if (tb_type == INSTR_RET) {
+    else if (tb_type.type == INSTR_RET) {
 
         // std::stack<stack_entry>
         // get_current_return_stack(env);
-        if (current_thread->process_id == 0x72c) {
            set_ret_status(env); 
-        }
         
         // OsiThread *current_thread = get_current_thread(env);
         // printf("Return call in (%d, %d). Popping from stack\n", current_thread->process_id, current_thread->thread_id);
@@ -524,6 +555,29 @@ int after_block_exec(CPUState *env, TranslationBlock *tb, TranslationBlock *next
         // printf("Address to be popped from stack: %x\n", pc);
         //if (next) printf("Next TB: " TARGET_FMT_lx "\n", next->pc);
     }
+    else if (tb_type.type == INSTR_UNC_JUMP) {
+        printf("Unconditional jump address:");
+        printf("%x\n", next->pc);
+        // if(is_present_in_whitelist(current_thread->process_id, tb_type.target_address)) {
+        //     printf("Valid jump. Continuing.\n");
+        // }
+        // else {
+        //     printf("Invalid jump. ALERT.\n");
+        //     exit(1);
+        // }
+    }
+
+    else if (tb_type.type == INSTR_CND_JUMP) {
+        printf("Conditional jump address:");
+        printf("%x\n", next->pc);
+        // if(is_present_in_whitelist(current_thread->process_id, tb_type.target_address)) {
+        //     printf("Valid jump. Continuing.\n");
+        // }
+        // else {
+        //     printf("Invalid jump. ALERT.\n");
+        //     exit(1);
+        // }
+    }
 
 // #elif defined TARGET_X86_64
     
@@ -552,11 +606,81 @@ int vmi_pgd_changed(CPUState *env, target_ulong old_pgd, target_ulong new_pgd) {
     return before_block_exec(env, NULL);
 }
 
+// enum class CSVState {
+//     UnquotedField,
+//     QuotedField,
+//     QuotedQuote
+// };
+
+// std::vector<std::string> readCSVRow(const std::string &row) {
+//     CSVState state = CSVState::UnquotedField;
+//     std::vector<std::string> fields {""};
+//     size_t i = 0; // index of the current field
+//     for (char c : row) {
+//         switch (state) {
+//             case CSVState::UnquotedField:
+//                 switch (c) {
+//                     case ',': // end of field
+//                               fields.push_back(""); i++;
+//                               break;
+//                     case '"': state = CSVState::QuotedField;
+//                               break;
+//                     default:  fields[i].push_back(c);
+//                               break; }
+//                 break;
+//             case CSVState::QuotedField:
+//                 switch (c) {
+//                     case '"': state = CSVState::QuotedQuote;
+//                               break;
+//                     default:  fields[i].push_back(c);
+//                               break; }
+//                 break;
+//             case CSVState::QuotedQuote:
+//                 switch (c) {
+//                     case ',': // , after closing quote
+//                               fields.push_back(""); i++;
+//                               state = CSVState::UnquotedField;
+//                               break;
+//                     case '"': // "" -> "
+//                               fields[i].push_back('"');
+//                               state = CSVState::QuotedField;
+//                               break;
+//                     default:  // end of quote
+//                               state = CSVState::UnquotedField;
+//                               break; }
+//                 break;
+//         }
+//     }
+//     return fields;
+// }
+
+// /// Read CSV file, Excel dialect. Accept "quoted fields ""with quotes"""
+// std::vector<std::vector<std::string>> readCSV(std::istream &in) {
+//     std::vector<std::vector<std::string>> table;
+//     std::string row;
+//     while (!in.eof()) {
+//         std::getline(in, row);
+//         if (in.bad() || in.fail()) {
+//             break;
+//         }
+//         auto fields = readCSVRow(row);
+//         table.push_back(fields);
+//     }
+//     return table;
+// }
+
+
+
 bool init_plugin(void *self) {
 
     panda_cb pcb;
     panda_enable_memcb();
     panda_enable_precise_pc();
+
+    // panda_arg_list *args = panda_get_args("osi_test");
+    // const char *whitelist = panda_parse_string(args, "whitelist", NULL);
+
+    load_whitelist();
     //panda_enable_tb_chaining();
 
 #if defined(INVOKE_FREQ_PGD)

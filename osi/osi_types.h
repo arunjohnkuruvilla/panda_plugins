@@ -22,8 +22,8 @@ typedef struct osi_thread_struct {
     // char *name;
     uint32_t thread_id;
     uint32_t process_id;
-    // uint32_t stack_base;
-    // uint32_t stack_limit;
+    target_ulong stack_base;
+    target_ulong stack_limit;
     // target_ulong asid;
     // OsiPage *pages;
     // target_ulong pid;
